@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(IndustrialMiddleware VERSION 1.0.0 LANGUAGES CXX)
+project(controls_middleware VERSION 0.1.0 LANGUAGES CXX)
 
 # Set C++20 standard
 set(CMAKE_CXX_STANDARD 20)
@@ -8,8 +8,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Compiler options
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
-add_executable(middleware_server
-    src/main.cpp
+# add libraries
+add_library(controls_middleware
+    src/server.cpp
 )
 
-target_include_directories(middleware_server PRIVATE src)
+# add includes
+target_include_directories(controls_middleware
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+add_executable(middleware src/main.cpp)
+target_link_libraries(middleware PRIVATE controls_middleware)
