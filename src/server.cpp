@@ -3,9 +3,10 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#include "controls_middleware/packet.h"
 #include "controls_middleware/server.h"
 
-int server() {
+int main() {
     // create a socket
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -31,6 +32,15 @@ int server() {
     std::cout << "Waiting for inbound connection" << std::endl;
     int client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_len);
     std::cout << "Client connected. Assigned FD: " << client_socket << std::endl;
+
+    // recieve data
+    sensor_packet incoming_packet;
+    read(client_socket, &incoming_packet, sizeof(incoming_packet));
+    std::cout << "[RECV]" 
+    << "\tdevice_id: " << incoming_packet.device_id 
+    << "\tstatus: " << incoming_packet.status 
+    << "\tvalue: " << incoming_packet.value 
+    << std::endl;
 
     close(client_socket);
     close(server_socket);
