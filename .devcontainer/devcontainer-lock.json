@@ -1,0 +1,14 @@
+{
+  "features": {
+    "ghcr.io/devcontainer-community/devcontainer-features/clang-format": {
+      "version": "1.0.2",
+      "resolved": "ghcr.io/devcontainer-community/devcontainer-features/clang-format@sha256:fd4a701f3d067e74caa5e8e229eaf13e45e85385dcac5ad81401c4e7678b735e",
+      "integrity": "sha256:fd4a701f3d067e74caa5e8e229eaf13e45e85385dcac5ad81401c4e7678b735e"
+    },
+    "ghcr.io/devcontainer-community/devcontainer-features/clang-tidy": {
+      "version": "1.0.2",
+      "resolved": "ghcr.io/devcontainer-community/devcontainer-features/clang-tidy@sha256:e120a41ca26d1638ffd5407a1c27cd75ee1b79c9bce1b7f17ede2fa20bc6d5b5",
+      "integrity": "sha256:e120a41ca26d1638ffd5407a1c27cd75ee1b79c9bce1b7f17ede2fa20bc6d5b5"
+    }
+  }
+}
