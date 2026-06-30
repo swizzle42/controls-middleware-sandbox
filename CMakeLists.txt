@@ -22,3 +22,6 @@ add_executable(sensor_client
     src/client/client.cpp
     src/client/main.cpp
 )
+
+# include custom targets
+include(cmake/format.cmake)
