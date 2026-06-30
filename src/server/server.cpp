@@ -4,9 +4,9 @@
 #include <unistd.h>
 
 #include "controls_middleware/packet.h"
-#include "controls_middleware/server.h"
+#include "server.h"
 
-int main() {
+int server() {
     // create a socket
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
 

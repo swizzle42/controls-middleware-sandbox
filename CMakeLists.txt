@@ -8,17 +8,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Compiler options
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
-# add libraries
-add_library(controls_middleware
-    src/server.cpp
-)
-
 # add includes
-target_include_directories(controls_middleware
-    PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+include_directories(include)
+
+# broker server executable
+add_executable(broker_server 
+    src/server/server.cpp
+    src/server/main.cpp
 )
 
-add_executable(middleware src/main.cpp)
-target_link_libraries(middleware PRIVATE controls_middleware)
+# sensor client executable
+add_executable(sensor_client 
+    src/client/client.cpp
+    src/client/main.cpp
+)

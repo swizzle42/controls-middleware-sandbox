@@ -5,9 +5,9 @@
 #include <unistd.h>
 
 #include "controls_middleware/packet.h"
-#include "controls_middleware/client.h"
+#include "client.h"
 
-int main() {
+int client() {
     // create a socket
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
 
