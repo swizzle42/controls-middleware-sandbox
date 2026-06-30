@@ -7,7 +7,10 @@
 	},
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
-	// "features": {},
+	"features": {
+		"ghcr.io/devcontainer-community/devcontainer-features/clang-tidy": {},
+		"ghcr.io/devcontainer-community/devcontainer-features/clang-format": {} 
+	},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	"forwardPorts": [8080],
