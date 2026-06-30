@@ -1,8 +1,8 @@
-#include "controls_middleware/server.h"
 #include "controls_middleware/client.h"
+#include "controls_middleware/server.h"
 
 int main() {
-    server();
+  server();
 
-    return 0;
+  return 0;
 }

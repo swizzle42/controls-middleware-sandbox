@@ -1,6 +1,6 @@
 #include "client.h"
 
 int main() {
-    client();
-    return 0;
+  client();
+  return 0;
 }
