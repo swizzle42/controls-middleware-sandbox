@@ -1,5 +1,6 @@
 #include <cstdint>
 
+namespace controls_middleware {
 // ensure the compiler doesn't add invisible padding bytes
 #pragma pack(push, 1)
 struct sensor_packet {
@@ -10,3 +11,5 @@ struct sensor_packet {
   float value;         // 4 bytes
 };
 #pragma pack(pop)
+
+}  // namespace controls_middleware
