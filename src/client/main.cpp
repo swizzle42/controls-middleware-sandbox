@@ -1,18 +1,18 @@
 #include <chrono>
 #include <iostream>
 
-#include "controls_middleware/packet.h"
 #include "client.h"
+#include "controls_middleware/packet.h"
 
-controls_middleware::sensor_packet generate_telemetry(uint16_t id,
-                                                      float metric_value) {
+controls_middleware::SensorPacket generate_telemetry(uint16_t id,
+                                                     float metric_value) {
   // create timestamp
   auto now = std::chrono::system_clock::now();
   auto duration = now.time_since_epoch();
   auto millis =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
-  return controls_middleware::sensor_packet{
+  return controls_middleware::SensorPacket{
       .device_id = id,
       .status = 1,
       .padding = 0,

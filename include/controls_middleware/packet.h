@@ -5,7 +5,7 @@
 namespace controls_middleware {
 // ensure the compiler doesn't add invisible padding bytes
 #pragma pack(push, 1)
-struct sensor_packet {
+struct SensorPacket {
   uint16_t device_id;  // Device ID (2 bytes)
   uint8_t status;      // 1 byte
   uint8_t padding;     // 1 byte
