@@ -1,8 +1,8 @@
 #include <chrono>
 #include <iostream>
 
-#include "client.h"
 #include "controls_middleware/packet.h"
+#include "client.h"
 
 controls_middleware::sensor_packet generate_telemetry(uint16_t id,
                                                       float metric_value) {
