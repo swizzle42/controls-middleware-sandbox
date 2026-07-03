@@ -65,8 +65,9 @@ void SensorServer::start(PacketCallback callback) {
   m_is_running = true;
 }
 
-void SensorServer::listen_loop(std::stop_token stop_token, PacketCallback callback) {
-  while(!stop_token.stop_requested()) {
+void SensorServer::listen_loop(std::stop_token stop_token,
+                               PacketCallback callback) {
+  while (!stop_token.stop_requested()) {
     int client_fd = accept(m_listen_fd, nullptr, nullptr);
 
     // if we fail to accept the client connection
@@ -84,8 +85,9 @@ void SensorServer::listen_loop(std::stop_token stop_token, PacketCallback callba
     m_client_fds.push_back(client_fd);
 
     // prepare to recieve data and read
-    SensorPacket incoming_packet {};
-    ssize_t bytes_read = read(client_fd, &incoming_packet, sizeof(SensorPacket));
+    SensorPacket incoming_packet{};
+    ssize_t bytes_read =
+        read(client_fd, &incoming_packet, sizeof(SensorPacket));
     if (bytes_read == sizeof(SensorPacket)) {
       // we have read a SensorPacket, defer to the callback
       callback(incoming_packet);
