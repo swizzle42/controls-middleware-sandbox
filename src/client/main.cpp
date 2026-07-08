@@ -1,18 +1,17 @@
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
-#include <csignal>
 #include <thread>
 
 #include "client.h"
-
 #include "controls_middleware/logging.h"
 #include "controls_middleware/packet.h"
 
-static const char* TAG = "SensorClient";
+static const char *TAG = "SensorClient";
 
 void signal_handler(int sig) {
-  LOG_INFO(TAG, "signal caught, exiting...");
+  LOG_INFO(TAG) << "signal caught (" << sig << "), exiting...";
   exit(sig);
 }
 
@@ -35,29 +34,18 @@ controls_middleware::SensorPacket generate_telemetry(uint16_t id,
 int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 
-  int id{101};
-
-  if (argc > 1) {
-    std::cout << "Sensor Begin with " << (argc - 1) << " arguments: ";
-    for (int i = 1; i < argc; ++i) {
-      std::cout << argv[i] << " ";
-    }
-    std::cout << std::endl;
-
-    id = atoi(argv[1]);
-  } else {
-    std::cout << "Sensor Begin..." << std::endl;
-  }
+  int id = argc > 1 ? atoi(argv[1]) : 1;
+  LOG_INFO(TAG) << "sensor begin with id=" << id;
 
   try {
     controls_middleware::SensorClient client("127.0.0.1", 8080);
-    LOG_INFO(TAG, "successful connection to server");
+    LOG_INFO(TAG) << "successful connection to server";
 
     while (true) {
       auto payload = generate_telemetry(id, 42.123f);
-      LOG_INFO(TAG, "sending payload");
+      LOG_INFO(TAG) << "sending payload";
       client.send_packet(payload);
-      LOG_INFO(TAG, "payload sent successfully");
+      LOG_INFO(TAG) << "payload sent successfully";
 
       std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }

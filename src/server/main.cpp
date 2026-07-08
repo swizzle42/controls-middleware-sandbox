@@ -14,7 +14,8 @@ std::atomic_bool running = true;
 void signal_handler(int) { running = false; }
 
 int main() {
-  LOG_INFO(TAG, "begin initialisation");
+  logging::set_level(logging::Level::Debug);
+  LOG_INFO(TAG) << "begin initialisation";
 
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
@@ -31,14 +32,14 @@ int main() {
     };
 
     server.start(on_packet_recv);
-    LOG_INFO(TAG, "sensor server started in the background");
+    LOG_INFO(TAG) << "sensor server started in the background";
 
-    LOG_INFO(TAG, "main loop alive, awaiting sensor telemetry...");
+    LOG_INFO(TAG) << "main loop alive, awaiting sensor telemetry...";
     while (running) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    LOG_INFO(TAG, "shutting down broker server");
+    LOG_INFO(TAG) << "shutting down broker server";
     server.stop();
 
   } catch (std::exception& e) {
