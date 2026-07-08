@@ -11,17 +11,27 @@ add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 # add includes
 include_directories(include)
 
+# add a common library
+add_library(controls_common
+    src/logging.cpp
+)
+target_include_directories(controls_common PUBLIC includes)
+
 # broker server executable
 add_executable(broker_server 
     src/server/server.cpp
     src/server/main.cpp
 )
 
+target_link_libraries(broker_server PRIVATE controls_common)
+
 # sensor client executable
 add_executable(sensor_client 
     src/client/client.cpp
     src/client/main.cpp
 )
+
+target_link_libraries(sensor_client PRIVATE controls_common)
 
 # include custom targets
 include(cmake/format.cmake)
