@@ -1,11 +1,23 @@
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <iostream>
 #include <thread>
 
+#include "controls_middleware/logging.h"
 #include "server.h"
 
+static const char* TAG = "BrokerServer";
+
+std::atomic_bool running = true;
+
+void signal_handler(int) { running = false; }
+
 int main() {
-  std::cout << "Starting Broker Server." << std::endl;
+  LOG_INFO(TAG, "begin initialisation");
+
+  std::signal(SIGINT, signal_handler);
+  std::signal(SIGTERM, signal_handler);
 
   try {
     controls_middleware::SensorServer server("127.0.0.1", 8080);
@@ -15,16 +27,19 @@ int main() {
                 << "Device ID: " << packet.device_id << "\n"
                 << "Metric Value: " << packet.value << "\n"
                 << "Timestamp: " << packet.timestamp << "\n"
-                << "Status: " << static_cast<int>(packet.status) << "\n";
+                << "Status: " << static_cast<int>(packet.status) << "\n\n";
     };
 
     server.start(on_packet_recv);
-    std::cout << "Server started in the background..." << std::endl;
+    LOG_INFO(TAG, "sensor server started in the background");
 
-    std::cout << "Control room main loop alive. Awaiting sensor telemetry...\n";
-    std::this_thread::sleep_for(std::chrono::seconds(30));
+    LOG_INFO(TAG, "main loop alive, awaiting sensor telemetry...");
+    while (running) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
-    std::cout << "Shutting down control room broker." << std::endl;
+    LOG_INFO(TAG, "shutting down broker server");
+    server.stop();
 
   } catch (std::exception& e) {
     std::cerr << "Fatal server exception: " << e.what() << std::endl;

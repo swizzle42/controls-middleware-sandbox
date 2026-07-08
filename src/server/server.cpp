@@ -18,15 +18,15 @@ static const char* TAG = "SensorServer";
 namespace controls_middleware {
 SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
   // create a non-blocking TCP socket
-  auto m_listen_fd = socket(AF_INET, (SOCK_STREAM | SOCK_NONBLOCK), 0);
-  if (m_listen_fd < 0) {
+  auto listener_fd = socket(AF_INET, (SOCK_STREAM | SOCK_NONBLOCK), 0);
+  if (listener_fd < 0) {
     LOG_ERROR(TAG, "Failed to create listener socket");
     throw std::runtime_error("Failed to create listener socket");
   }
 
   // configure the listener socket
   int opt{1};
-  setsockopt(m_listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  setsockopt(listener_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
   // configure the target endpoint address structure
   struct sockaddr_in listener_addr{};
@@ -35,30 +35,30 @@ SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
 
   // handle ip address
   if (inet_pton(AF_INET, ip_address.data(), &listener_addr.sin_addr) <= 0) {
-    close(m_listen_fd);
+    close(listener_fd);
     LOG_ERROR(TAG, "Invalid IP address string format");
     throw std::runtime_error("Invalid IP address string format: " +
                              std::string(ip_address));
   }
 
   // bind to the listener address to the socket
-  if (bind(m_listen_fd, reinterpret_cast<struct sockaddr*>(&listener_addr),
+  if (bind(listener_fd, reinterpret_cast<struct sockaddr*>(&listener_addr),
            sizeof(listener_addr)) < 0) {
-    close(m_listen_fd);
+    close(listener_fd);
     LOG_ERROR(TAG, "Failed to bind the socket to requested port");
     throw std::runtime_error("Failed to bind the socket to port " +
                              std::to_string(port));
   }
 
-  if (listen(m_listen_fd, 5) < 0) {
-    close(m_listen_fd);
+  if (listen(listener_fd, 5) < 0) {
+    close(listener_fd);
     LOG_ERROR(TAG, "Failed to listen on requested port");
     throw std::runtime_error("Failed to listen on port " +
                              std::to_string(port));
   }
 
   // otherwise, the listener socket is initialise so add to monitor list
-  pollfd listener{.fd = m_listen_fd,
+  pollfd listener{.fd = listener_fd,
                   .events = POLLIN,  // check for readability
                   .revents = 0};
 
@@ -68,6 +68,7 @@ SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
 }
 
 SensorServer::~SensorServer() {
+  stop();
   // on destruction, close any and all monitored files
   for (auto& pfd : m_monitor_list) {
     if (pfd.fd >= 0) {
@@ -81,6 +82,10 @@ void SensorServer::start(PacketCallback callback) {
   m_is_running = true;
 }
 
+void SensorServer::stop() {
+  if (m_worker_thread.joinable()) m_worker_thread.request_stop();
+}
+
 void SensorServer::listen_loop(std::stop_token stop_token,
                                PacketCallback callback) {
   while (!stop_token.stop_requested()) {
@@ -89,7 +94,7 @@ void SensorServer::listen_loop(std::stop_token stop_token,
     std::vector<int> fds_to_remove;
 
     // poll monitored connections
-    int ready = poll(m_monitor_list.data(), m_monitor_list.size(), -1);
+    int ready = poll(m_monitor_list.data(), m_monitor_list.size(), 100);
 
     // if ready is -1, we have an error
     if (ready == -1) {
