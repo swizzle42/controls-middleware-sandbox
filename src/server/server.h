@@ -63,7 +63,8 @@ class SensorServer {
   /**
    * @brief handle client events
    */
-  void handle_client_event(const pollfd& client_slot, const PacketCallback& callback,
+  void handle_client_event(const pollfd& client_slot,
+                           const PacketCallback& callback,
                            std::vector<int>& fds_to_remove);
 
   /**
