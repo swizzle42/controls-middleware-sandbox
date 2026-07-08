@@ -1,5 +1,7 @@
 #pragma once
 
+#include <poll.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -10,6 +12,13 @@
 #include "controls_middleware/packet.h"
 
 namespace controls_middleware {
+
+// context for client data buffer
+typedef struct {
+  std::vector<uint8_t> buffer;
+  size_t read_ptr{0};
+} buffer_ctx_t;
+
 class SensorServer {
  public:
   using PacketCallback = std::function<void(const SensorPacket&)>;
@@ -35,12 +44,39 @@ class SensorServer {
   void stop();
 
  private:
-  // internal listen loop
+  /**
+   * @brief internal listen loop
+   */
   void listen_loop(std::stop_token stop_token, PacketCallback callback);
 
-  int m_listen_fd{-1};            // primary public socket
-  std::vector<int> m_client_fds;  // dynamic list of active client sockets
-  std::jthread m_worker_thread;   // handle to background worker
+  /**
+   * @brief process the client message buffer
+   */
+  std::vector<SensorPacket> process_client_buffer(buffer_ctx_t& context);
+
+  /**
+   * @brief handle new connections and stage them
+   */
+  void handle_new_connection(pollfd& listen_slot,
+                             std::vector<pollfd>& clients_to_add);
+
+  /**
+   * @brief handle client events
+   */
+  void handle_client_event(const pollfd& client_slot,
+                           const PacketCallback& callback,
+                           std::vector<int>& fds_to_remove);
+
+  /**
+   * @brief apply any staged changes to the list of active sockets
+   */
+  void apply_staged_updates(std::vector<int>& fds_to_remove,
+                            std::vector<pollfd>& clients_to_add);
+
+  std::vector<pollfd> m_monitor_list;  // list of active sockets
+  std::unordered_map<int, buffer_ctx_t>
+      m_buffers;                          // buffers for each active socket
+  std::jthread m_worker_thread;           // handle to background worker
   std::atomic<bool> m_is_running{false};  // thread-safe flag tracking state
 };
 

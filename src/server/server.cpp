@@ -5,14 +5,16 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 
 namespace controls_middleware {
 SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
-  // create a TCP socket
-  m_listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+  // create a non-blocking TCP socket
+  auto m_listen_fd = socket(AF_INET, (SOCK_STREAM | SOCK_NONBLOCK), 0);
   if (m_listen_fd < 0) {
     throw std::runtime_error("Failed to create listener socket");
   }
@@ -46,16 +48,22 @@ SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
     throw std::runtime_error("Failed to listen on port " +
                              std::to_string(port));
   }
+
+  // otherwise, the listener socket is initialise so add to monitor list
+  pollfd listener{.fd = m_listen_fd,
+                  .events = POLLIN,  // check for readability
+                  .revents = 0};
+
+  m_monitor_list.push_back(listener);
+
+  std::cout << "[SensorServer] Initialisation complete." << std::endl;
 }
 
 SensorServer::~SensorServer() {
-  if (m_listen_fd >= 0) {
-    close(m_listen_fd);
-  }
-
-  for (int fd : m_client_fds) {
-    if (fd >= 0) {
-      close(fd);
+  // on destruction, close any and all monitored files
+  for (auto& pfd : m_monitor_list) {
+    if (pfd.fd >= 0) {
+      close(pfd.fd);
     }
   }
 }
@@ -68,41 +76,156 @@ void SensorServer::start(PacketCallback callback) {
 void SensorServer::listen_loop(std::stop_token stop_token,
                                PacketCallback callback) {
   while (!stop_token.stop_requested()) {
-    int client_fd = accept(m_listen_fd, nullptr, nullptr);
+    // staging vectors
+    std::vector<pollfd> clients_to_add;
+    std::vector<int> fds_to_remove;
 
-    // if we fail to accept the client connection
-    if (client_fd < 0) {
-      // if a stop has been requested, we just break
-      if (stop_token.stop_requested()) {
-        break;
+    // poll monitored connections
+    int ready = poll(m_monitor_list.data(), m_monitor_list.size(), -1);
+
+    // if ready is -1, we have an error
+    if (ready == -1) {
+      if (errno == EINTR) continue;
+      throw std::runtime_error("Failed to poll open sockets.");
+    }
+
+    for (size_t i = 0; i < m_monitor_list.size(); ++i) {
+      auto& slot = m_monitor_list[i];
+
+      // if there are no returned events for the slot, continue to the next
+      if (slot.revents == 0) continue;
+
+      if (i == 0) {
+        std::cout << "[SensorServer] Event on Listening Socket." << std::endl;
+        handle_new_connection(slot, clients_to_add);
+      } else {
+        std::cout << "[SensorServer] Event on Client Socket." << std::endl;
+        handle_client_event(slot, callback, fds_to_remove);
       }
-
-      // otherwise, we need to handle the error (TODO)
-      continue;
     }
 
-    // add the client FD to our list of active clients
-    m_client_fds.push_back(client_fd);
-
-    // prepare to recieve data and read
-    SensorPacket incoming_packet{};
-    ssize_t bytes_read =
-        read(client_fd, &incoming_packet, sizeof(SensorPacket));
-    if (bytes_read == sizeof(SensorPacket)) {
-      // we have read a SensorPacket, defer to the callback
-      callback(incoming_packet);
-    } else {
-      std::cerr << "Failed to read packet.";
+    if (!fds_to_remove.empty() || !clients_to_add.empty()) {
+      std::cout << "[SensorServer] Modifying server clients." << std::endl;
+      apply_staged_updates(fds_to_remove, clients_to_add);
     }
+  }
+  m_is_running = false;
+}
 
-    // clean up the client communication channel
-    close(client_fd);
-    m_client_fds.pop_back();
+void SensorServer::handle_new_connection(pollfd& listen_slot,
+                                         std::vector<pollfd>& clients_to_add) {
+  if (!(listen_slot.revents & POLLIN)) return;
+
+  int new_client_fd = accept4(listen_slot.fd, nullptr, nullptr, SOCK_NONBLOCK);
+  if (new_client_fd == -1) return;
+
+  // add the client to the staging vector
+  clients_to_add.push_back(
+      pollfd{.fd = new_client_fd, .events = POLLIN, .revents = 0});
+
+  // create an entry for the clients message buffer
+  m_buffers[new_client_fd] = buffer_ctx_t{};
+
+  std::cout << "[SensorServer] Added new connection to Server." << std::endl;
+}
+
+void SensorServer::handle_client_event(const pollfd& client_slot,
+                                       const PacketCallback& callback,
+                                       std::vector<int>& fds_to_remove) {
+  if (client_slot.revents & (POLLERR | POLLHUP)) {
+    fds_to_remove.push_back(client_slot.fd);
+    return;
   }
 
-  // the listen loop is exiting
-  m_is_running = false;
-  return;
+  if (client_slot.revents & POLLIN) {
+    uint8_t scratchpad[64];
+    ssize_t bytes_read = read(client_slot.fd, scratchpad, sizeof(scratchpad));
+
+    if (bytes_read > 0) {
+      std::cout << "[SensorServer] Bytes read from Client." << std::endl;
+      auto it = m_buffers.find(client_slot.fd);
+      if (it != m_buffers.end()) {
+        auto& ctx = it->second;
+        ctx.buffer.insert(ctx.buffer.end(), scratchpad,
+                          scratchpad + bytes_read);
+
+        for (auto& packet : process_client_buffer(ctx)) {
+          callback(packet);
+        }
+      }
+    } else {
+      std::cout
+          << "[SensorServer] Client signaled change but sent no bytes, closing."
+          << std::endl;
+      fds_to_remove.push_back(client_slot.fd);
+    }
+  }
+}
+
+void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
+                                        std::vector<pollfd>& clients_to_add) {
+  // process removal
+  for (int fd : fds_to_remove) {
+    std::cout << "[SensorServer] Removing Client connection." << std::endl;
+    close(fd);
+    m_buffers.erase(fd);
+
+    m_monitor_list.erase(
+        std::remove_if(
+            m_monitor_list.begin(), m_monitor_list.end(),
+            [fd](const pollfd& monitor_item) { return monitor_item.fd == fd; }),
+        m_monitor_list.end());
+  }
+
+  // process addition
+  std::cout << "[SensorServer] Adding Client connections." << std::endl;
+  m_monitor_list.insert(m_monitor_list.end(), clients_to_add.begin(),
+                        clients_to_add.end());
+}
+
+std::vector<SensorPacket> SensorServer::process_client_buffer(
+    buffer_ctx_t& context) {
+  // we need to greedily take from the front of the buffer in increments of
+  // sizeof(SensorPacket)
+  std::vector<SensorPacket> packets;
+
+  // NOTE: blocking unitl we process all the packets in the client buffer
+  while ((context.buffer.size() - context.read_ptr) >= sizeof(SensorPacket)) {
+    // get the start of the packet
+    const uint8_t* packet_ptr = context.buffer.data() + context.read_ptr;
+
+    // cast the packet
+    const SensorPacket& packet =
+        *reinterpret_cast<const SensorPacket*>(packet_ptr);
+    // add the packet to our return vector
+    packets.push_back(packet);
+
+    // consume the frame size in the tracking pointer
+    context.read_ptr += sizeof(SensorPacket);
+
+    std::cout << "[SensorServer] Packet added to buffer." << std::endl;
+  }
+
+  // compaction
+  if (context.read_ptr == context.buffer.size()) {
+    // if we have read up to the end of the buffer we can clear
+    context.buffer.clear();
+    context.read_ptr = 0;
+
+    std::cout << "[SensorServer] Client buffer cleared." << std::endl;
+  } else if (context.read_ptr >= (sizeof(SensorPacket) * 4)) {
+    // otherwise, if we've read over 4 frames, we can move the unread data to
+    // the start of the buffer and begin from idx=0
+    size_t unread_bytes = context.buffer.size() - context.read_ptr;
+    std::memmove(context.buffer.data(),
+                 context.buffer.data() + context.read_ptr, unread_bytes);
+    context.buffer.resize(unread_bytes);
+    context.read_ptr = 0;
+
+    std::cout << "[SensorServer] Client buffer resized." << std::endl;
+  }
+
+  return packets;
 }
 
 }  // namespace controls_middleware
