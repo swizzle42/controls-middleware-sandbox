@@ -1,9 +1,20 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <csignal>
+#include <thread>
 
 #include "client.h"
+
+#include "controls_middleware/logging.h"
 #include "controls_middleware/packet.h"
+
+static const char* TAG = "SensorClient";
+
+void signal_handler(int sig) {
+  LOG_INFO(TAG, "signal caught, exiting...");
+  exit(sig);
+}
 
 controls_middleware::SensorPacket generate_telemetry(uint16_t id,
                                                      float metric_value) {
@@ -22,6 +33,8 @@ controls_middleware::SensorPacket generate_telemetry(uint16_t id,
 }
 
 int main(int argc, char *argv[]) {
+  signal(SIGINT, signal_handler);
+
   int id{101};
 
   if (argc > 1) {
@@ -38,14 +51,16 @@ int main(int argc, char *argv[]) {
 
   try {
     controls_middleware::SensorClient client("127.0.0.1", 8080);
-    std::cout << "Successful connection to Server.";
+    LOG_INFO(TAG, "successful connection to server");
 
-    auto payload = generate_telemetry(id, 42.123f);
+    while (true) {
+      auto payload = generate_telemetry(id, 42.123f);
+      LOG_INFO(TAG, "sending payload");
+      client.send_packet(payload);
+      LOG_INFO(TAG, "payload sent successfully");
 
-    std::cout << "Sending payload..." << std::endl;
-    client.send_packet(payload);
-
-    std::cout << "Transmission successful. Exiting." << std::endl;
+      std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    }
 
   } catch (const std::exception &e) {
     std::cerr << "Runtime error: " << e.what() << std::endl;
