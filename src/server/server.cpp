@@ -196,37 +196,44 @@ void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
                         clients_to_add.end());
 }
 
-std::vector<SensorPacket> SensorServer::process_client_buffer(
+std::vector<sensor_packet> SensorServer::process_client_buffer(
     buffer_ctx_t& context) {
   // we need to greedily take from the front of the buffer in increments of
-  // sizeof(SensorPacket)
-  std::vector<SensorPacket> packets;
+  // sizeof(sensor_packet)
+  std::vector<sensor_packet> packets;
 
   // NOTE: blocking unitl we process all the packets in the client buffer
-  while ((context.buffer.size() - context.read_ptr) >= sizeof(SensorPacket)) {
+  while ((context.buffer.size() - context.read_ptr) >= sizeof(sensor_packet)) {
     // get the start of the packet
     const uint8_t* packet_ptr = context.buffer.data() + context.read_ptr;
 
     // cast the packet
-    const SensorPacket& packet =
-        *reinterpret_cast<const SensorPacket*>(packet_ptr);
+    const sensor_packet& packet =
+        *reinterpret_cast<const sensor_packet*>(packet_ptr);
     // add the packet to our return vector
     packets.push_back(packet);
 
     // consume the frame size in the tracking pointer
-    context.read_ptr += sizeof(SensorPacket);
+    context.read_ptr += sizeof(sensor_packet);
 
     LOG_DEBUG(TAG) << "packet constructed and added to buffer";
   }
 
-  // compaction
+  // compaction once we've extracted packets
+  client_buffer_compaction(context, (sizeof(sensor_packet) * 4));
+
+  return packets;
+}
+
+void SensorServer::client_buffer_compaction(
+    controls_middleware::buffer_ctx_t& context, size_t buffer_max_size) {
   if (context.read_ptr == context.buffer.size()) {
     // if we have read up to the end of the buffer we can clear
     context.buffer.clear();
     context.read_ptr = 0;
 
     LOG_DEBUG(TAG) << "client buffer cleared";
-  } else if (context.read_ptr >= (sizeof(SensorPacket) * 4)) {
+  } else if (context.read_ptr >= buffer_max_size) {
     // otherwise, if we've read over 4 frames, we can move the unread data to
     // the start of the buffer and begin from idx=0
     size_t unread_bytes = context.buffer.size() - context.read_ptr;
@@ -237,8 +244,6 @@ std::vector<SensorPacket> SensorServer::process_client_buffer(
 
     LOG_DEBUG(TAG) << "client buffer resized";
   }
-
-  return packets;
 }
 
 }  // namespace controls_middleware

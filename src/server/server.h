@@ -21,7 +21,7 @@ typedef struct {
 
 class SensorServer {
  public:
-  using PacketCallback = std::function<void(const SensorPacket&)>;
+  using PacketCallback = std::function<void(const sensor_packet&)>;
 
   // constructor: prepare listening socket but don't start the loop yet
   SensorServer(std::string_view ip_address, uint16_t port);
@@ -52,7 +52,12 @@ class SensorServer {
   /**
    * @brief process the client message buffer
    */
-  std::vector<SensorPacket> process_client_buffer(buffer_ctx_t& context);
+  std::vector<sensor_packet> process_client_buffer(buffer_ctx_t& context);
+
+  /**
+   * @brief compact the client buffer
+   */
+  void client_buffer_compaction(controls_middleware::buffer_ctx_t& context, size_t buffer_max_size);
 
   /**
    * @brief handle new connections and stage them

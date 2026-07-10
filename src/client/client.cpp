@@ -61,14 +61,14 @@ SensorClient& SensorClient::operator=(SensorClient&& other) noexcept {
   return *this;
 }
 
-void SensorClient::send_packet(const SensorPacket& packet) {
-  ssize_t bytes_sent = write(m_socket_fd, &packet, sizeof(SensorPacket));
+void SensorClient::send_packet(const sensor_packet& packet) {
+  ssize_t bytes_sent = write(m_socket_fd, &packet, sizeof(sensor_packet));
 
   if (bytes_sent < 0) {
     throw std::runtime_error("Network write operation failed");
   }
 
-  if (static_cast<size_t>(bytes_sent) != sizeof(SensorPacket)) {
+  if (static_cast<size_t>(bytes_sent) != sizeof(sensor_packet)) {
     throw std::runtime_error("Partial write occurred");
   }
 }

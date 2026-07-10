@@ -23,7 +23,7 @@ class SensorClient {
   /**
    * @brief Transmit a pre-packed data frame
    */
-  void send_packet(const SensorPacket& packet);
+  void send_packet(const sensor_packet& packet);
 
  private:
   // file descriptor/resource handle

@@ -15,7 +15,7 @@ void signal_handler(int sig) {
   exit(sig);
 }
 
-controls_middleware::SensorPacket generate_telemetry(uint16_t id,
+controls_middleware::sensor_packet generate_telemetry(uint16_t id,
                                                      float metric_value) {
   // create timestamp
   auto now = std::chrono::system_clock::now();
@@ -23,7 +23,7 @@ controls_middleware::SensorPacket generate_telemetry(uint16_t id,
   auto millis =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
-  return controls_middleware::SensorPacket{
+  return controls_middleware::sensor_packet{
       .device_id = id,
       .status = 1,
       .padding = 0,
