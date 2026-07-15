@@ -7,7 +7,7 @@
 #include "controls_middleware/logging.h"
 #include "server.h"
 
-static const char* TAG = "BrokerServer";
+static const char* TAG = "broker";
 
 std::atomic_bool running = true;
 

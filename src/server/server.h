@@ -45,6 +45,11 @@ class SensorServer {
 
  private:
   /**
+   * @brief get listening socket
+   */
+  int get_listener_socket(std::string_view address, std::string_view port);
+
+  /**
    * @brief internal listen loop
    */
   void listen_loop(std::stop_token stop_token, PacketCallback callback);
@@ -57,7 +62,8 @@ class SensorServer {
   /**
    * @brief compact the client buffer
    */
-  void client_buffer_compaction(controls_middleware::buffer_ctx_t& context, size_t buffer_max_size);
+  void client_buffer_compaction(controls_middleware::buffer_ctx_t& context,
+                                size_t buffer_max_size);
 
   /**
    * @brief handle new connections and stage them

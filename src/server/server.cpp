@@ -1,8 +1,10 @@
 #include "server.h"
 
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -13,49 +15,11 @@
 
 #include "controls_middleware/logging.h"
 
-static const char* TAG = "SensorServer";
+static const char* TAG = "sensor_server";
 
 namespace controls_middleware {
 SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
-  // create a non-blocking TCP socket
-  auto listener_fd = socket(AF_INET, (SOCK_STREAM | SOCK_NONBLOCK), 0);
-  if (listener_fd < 0) {
-    LOG_ERROR(TAG) << "Failed to create listener socket";
-    throw std::runtime_error("Failed to create listener socket");
-  }
-
-  // configure the listener socket
-  int opt{1};
-  setsockopt(listener_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  // configure the target endpoint address structure
-  struct sockaddr_in listener_addr{};
-  listener_addr.sin_family = AF_INET;
-  listener_addr.sin_port = htons(port);
-
-  // handle ip address
-  if (inet_pton(AF_INET, ip_address.data(), &listener_addr.sin_addr) <= 0) {
-    close(listener_fd);
-    LOG_ERROR(TAG) << "Invalid IP address string format";
-    throw std::runtime_error("Invalid IP address string format: " +
-                             std::string(ip_address));
-  }
-
-  // bind to the listener address to the socket
-  if (bind(listener_fd, reinterpret_cast<struct sockaddr*>(&listener_addr),
-           sizeof(listener_addr)) < 0) {
-    close(listener_fd);
-    LOG_ERROR(TAG) << "Failed to bind the socket to requested port";
-    throw std::runtime_error("Failed to bind the socket to port " +
-                             std::to_string(port));
-  }
-
-  if (listen(listener_fd, 5) < 0) {
-    close(listener_fd);
-    LOG_ERROR(TAG) << "Failed to listen on requested port";
-    throw std::runtime_error("Failed to listen on port " +
-                             std::to_string(port));
-  }
+  int listener_fd = get_listener_socket(ip_address, std::to_string(port));
 
   // otherwise, the listener socket is initialise so add to monitor list
   pollfd listener{.fd = listener_fd,
@@ -65,6 +29,7 @@ SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
   m_monitor_list.push_back(listener);
 
   LOG_DEBUG(TAG) << "initialisation complete";
+  LOG_DEBUG(TAG) << "created socket on " << ip_address << ":" << port;
 }
 
 SensorServer::~SensorServer() {
@@ -75,6 +40,54 @@ SensorServer::~SensorServer() {
       close(pfd.fd);
     }
   }
+}
+
+int SensorServer::get_listener_socket(std::string_view address,
+                                      std::string_view port) {
+  int listener_fd;
+  int yes{1};
+  int status;
+
+  struct addrinfo hints, *listener_info, *p;
+
+  // get a socket and bind it
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  if ((status = getaddrinfo(address.data(), port.data(), &hints,
+                            &listener_info)) != 0) {
+    LOG_ERROR(TAG) << "getaddrinfo: " << gai_strerror(status);
+    throw std::runtime_error("Failed to get server info");
+  }
+
+  for (p = listener_info; p != nullptr; p = p->ai_next) {
+    listener_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+    if (listener_fd < 0) {
+      continue;
+    }
+
+    setsockopt(listener_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+
+    if (bind(listener_fd, p->ai_addr, p->ai_addrlen) < 0) {
+      close(listener_fd);
+      continue;
+    }
+
+    break;
+  }
+
+  if (p == nullptr) {
+    throw std::runtime_error("failed to create and bind to socket");
+  }
+
+  freeaddrinfo(listener_info);
+
+  if (listen(listener_fd, 10) == -1) {
+    throw std::runtime_error("failed to listen on port");
+  }
+
+  return listener_fd;
 }
 
 void SensorServer::start(PacketCallback callback) {
@@ -153,7 +166,8 @@ void SensorServer::handle_client_event(const pollfd& client_slot,
 
   if (client_slot.revents & POLLIN) {
     uint8_t scratchpad[64];
-    ssize_t bytes_read = read(client_slot.fd, scratchpad, sizeof(scratchpad));
+    ssize_t bytes_read =
+        recv(client_slot.fd, scratchpad, sizeof(scratchpad), 0);
 
     if (bytes_read > 0) {
       LOG_DEBUG(TAG) << "Bytes read from client";
@@ -190,10 +204,11 @@ void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
   }
 
   // process addition
-
-  LOG_DEBUG(TAG) << "Adding client connections";
-  m_monitor_list.insert(m_monitor_list.end(), clients_to_add.begin(),
-                        clients_to_add.end());
+  if (!m_monitor_list.empty()) {
+    LOG_DEBUG(TAG) << "Adding client connections";
+    m_monitor_list.insert(m_monitor_list.end(), clients_to_add.begin(),
+                          clients_to_add.end());
+  }
 }
 
 std::vector<sensor_packet> SensorServer::process_client_buffer(
