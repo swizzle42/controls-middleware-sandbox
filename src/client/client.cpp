@@ -13,7 +13,6 @@
 #include <string>
 
 #include "controls_middleware/logging.h"
-#include "flatbuffers/flatbuffers.h"
 
 static const char* TAG = "sensor_client";
 
@@ -74,13 +73,9 @@ SensorClient& SensorClient::operator=(SensorClient&& other) noexcept {
   return *this;
 }
 
-void SensorClient::send_packet(const sensor_packet& packet) {
-  // create the payload
-  flatbuffers::FlatBufferBuilder builder;
-  auto telemetry_offset = CreateTelemetry(
-      builder, packet.device_id, packet.status, packet.timestamp, packet.value);
-  builder.Finish(telemetry_offset);
-
+void SensorClient::send_packet(const flatbuffers::FlatBufferBuilder& builder,
+                               const msg_type_enum msg_type,
+                               const uint32_t seq) {
   // get the serialised data
   const uint8_t* payload_ptr = builder.GetBufferPointer();
   const uint32_t payload_size = builder.GetSize();
@@ -89,12 +84,9 @@ void SensorClient::send_packet(const sensor_packet& packet) {
   control_frame_header header;
   header.magic = htons(magic_val);
   header.version = 1;
-  header.msg_type = msg_type_enum::TELEMETRY;
-  header.seq_num = htonl(1);
+  header.msg_type = msg_type;
+  header.seq_num = htonl(seq);
   header.payload_length = htonl(payload_size);
-
-  LOG_INFO(TAG) << "sending header with magic value: " << std::hex
-                << header.magic;
 
   // create an iovec
   struct iovec iov[2];

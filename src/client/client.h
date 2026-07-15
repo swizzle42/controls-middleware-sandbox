@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "telemetry_generated.h"
+#include "flatbuffers/flatbuffers.h"
 
 namespace controls_middleware {
 class SensorClient {
@@ -24,9 +24,14 @@ class SensorClient {
   SensorClient& operator=(SensorClient&& other) noexcept;
 
   /**
-   * @brief Transmit a pre-packed data frame
+   * @brief Transmit a pre-serialised payload
+   *
+   * @param builder: finished FlatBuffer builder
+   * @param msg_type: type of message being sent
+   * @param seq: sequence number
    */
-  void send_packet(const sensor_packet& packet);
+  void send_packet(const flatbuffers::FlatBufferBuilder& builder,
+                   const msg_type_enum msg_type, const uint32_t seq);
 
  private:
   // file descriptor/resource handle
