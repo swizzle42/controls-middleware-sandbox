@@ -26,7 +26,6 @@ controls_middleware::sensor_packet generate_telemetry(uint16_t id,
   return controls_middleware::sensor_packet{
       .device_id = id,
       .status = 1,
-      .padding = 0,
       .timestamp = static_cast<uint64_t>(millis),
       .value = metric_value};
 }

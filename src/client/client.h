@@ -1,9 +1,12 @@
 #pragma once
 
 #include <controls_middleware/packet.h>
+#include <sys/uio.h>
 
 #include <cstdint>
 #include <string_view>
+
+#include "telemetry_generated.h"
 
 namespace controls_middleware {
 class SensorClient {
@@ -28,5 +31,9 @@ class SensorClient {
  private:
   // file descriptor/resource handle
   int m_socket_fd{-1};
+
+  // send_all method
+  // int send_all(const uint8_t* buf, int& len);
+  int send_all(iovec* iov, int iovcnt);
 };
 }  // namespace controls_middleware

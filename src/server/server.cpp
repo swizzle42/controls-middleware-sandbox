@@ -14,6 +14,8 @@
 #include <string>
 
 #include "controls_middleware/logging.h"
+#include "flatbuffers/flatbuffers.h"
+#include "telemetry_generated.h"
 
 static const char* TAG = "sensor_server";
 
@@ -174,8 +176,8 @@ void SensorServer::handle_client_event(const pollfd& client_slot,
       auto it = m_buffers.find(client_slot.fd);
       if (it != m_buffers.end()) {
         auto& ctx = it->second;
-        ctx.buffer.insert(ctx.buffer.end(), scratchpad,
-                          scratchpad + bytes_read);
+        ctx.rx_buffer.insert(ctx.rx_buffer.end(), scratchpad,
+                             scratchpad + bytes_read);
 
         for (auto& packet : process_client_buffer(ctx)) {
           callback(packet);
@@ -213,52 +215,61 @@ void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
 
 std::vector<sensor_packet> SensorServer::process_client_buffer(
     buffer_ctx_t& context) {
-  // we need to greedily take from the front of the buffer in increments of
-  // sizeof(sensor_packet)
+  // greedily produce sensor_packets from the client buffer
   std::vector<sensor_packet> packets;
 
-  // NOTE: blocking unitl we process all the packets in the client buffer
-  while ((context.buffer.size() - context.read_ptr) >= sizeof(sensor_packet)) {
-    // get the start of the packet
-    const uint8_t* packet_ptr = context.buffer.data() + context.read_ptr;
+  while (true) {
+    // if we dont' have enough data to produce a control frame header, break
+    if (context.rx_buffer.size() < sizeof(control_frame_header)) {
+      break;
+    }
 
-    // cast the packet
-    const sensor_packet& packet =
-        *reinterpret_cast<const sensor_packet*>(packet_ptr);
-    // add the packet to our return vector
-    packets.push_back(packet);
+    // read the header data
+    control_frame_header header;
+    std::memcpy(&header, context.rx_buffer.data(),
+                sizeof(control_frame_header));
 
-    // consume the frame size in the tracking pointer
-    context.read_ptr += sizeof(sensor_packet);
+    // convert from network to host format
+    uint16_t magic = ntohs(header.magic);
+    uint32_t payload_len = ntohl(header.payload_length);
 
-    LOG_DEBUG(TAG) << "packet constructed and added to buffer";
+    // validate the magic number
+    if (magic != magic_val) {
+      LOG_ERROR(TAG) << "protocol violation: bad magic bytes 0x" << std::hex
+                     << magic << ". Returning early.";
+      return packets;
+    }
+
+    // check if we have the complete flatbuffer
+    uint32_t total_packet_size = sizeof(control_frame_header) + payload_len;
+    if (context.rx_buffer.size() < total_packet_size) {
+      break;
+    }
+
+    const uint8_t* payload_ptr =
+        context.rx_buffer.data() + sizeof(control_frame_header);
+
+    // verify the data
+    flatbuffers::Verifier verifier(payload_ptr, payload_len);
+    if (VerifyTelemetryBuffer(verifier)) {
+      auto telemetry = GetTelemetry(payload_ptr);
+
+      LOG_DEBUG(TAG) << "data verified, creating telemetry packet";
+      // create a sensor packet
+      sensor_packet packet;
+      packet.device_id = telemetry->device_id();
+      packet.status = telemetry->status();
+      packet.timestamp = telemetry->timestamp();
+      packet.value = telemetry->value();
+      packets.push_back(packet);
+    }
+
+    // clear the frame from the buffer
+    context.rx_buffer.erase(context.rx_buffer.begin(),
+                            context.rx_buffer.begin() + total_packet_size);
   }
-
-  // compaction once we've extracted packets
-  client_buffer_compaction(context, (sizeof(sensor_packet) * 4));
 
   return packets;
-}
-
-void SensorServer::client_buffer_compaction(
-    controls_middleware::buffer_ctx_t& context, size_t buffer_max_size) {
-  if (context.read_ptr == context.buffer.size()) {
-    // if we have read up to the end of the buffer we can clear
-    context.buffer.clear();
-    context.read_ptr = 0;
-
-    LOG_DEBUG(TAG) << "client buffer cleared";
-  } else if (context.read_ptr >= buffer_max_size) {
-    // otherwise, if we've read over 4 frames, we can move the unread data to
-    // the start of the buffer and begin from idx=0
-    size_t unread_bytes = context.buffer.size() - context.read_ptr;
-    std::memmove(context.buffer.data(),
-                 context.buffer.data() + context.read_ptr, unread_bytes);
-    context.buffer.resize(unread_bytes);
-    context.read_ptr = 0;
-
-    LOG_DEBUG(TAG) << "client buffer resized";
-  }
 }
 
 }  // namespace controls_middleware

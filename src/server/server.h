@@ -15,7 +15,7 @@ namespace controls_middleware {
 
 // context for client data buffer
 typedef struct {
-  std::vector<uint8_t> buffer;
+  std::vector<uint8_t> rx_buffer;
   size_t read_ptr{0};
 } buffer_ctx_t;
 
@@ -58,12 +58,6 @@ class SensorServer {
    * @brief process the client message buffer
    */
   std::vector<sensor_packet> process_client_buffer(buffer_ctx_t& context);
-
-  /**
-   * @brief compact the client buffer
-   */
-  void client_buffer_compaction(controls_middleware::buffer_ctx_t& context,
-                                size_t buffer_max_size);
 
   /**
    * @brief handle new connections and stage them
