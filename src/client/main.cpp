@@ -16,7 +16,7 @@ void signal_handler(int sig) {
 }
 
 controls_middleware::sensor_packet generate_telemetry(uint16_t id,
-                                                     float metric_value) {
+                                                      float metric_value) {
   // create timestamp
   auto now = std::chrono::system_clock::now();
   auto duration = now.time_since_epoch();

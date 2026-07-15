@@ -93,7 +93,8 @@ void SensorClient::send_packet(const sensor_packet& packet) {
   header.seq_num = htonl(1);
   header.payload_length = htonl(payload_size);
 
-  LOG_INFO(TAG) << "sending header with magic value: " << std::hex << header.magic;
+  LOG_INFO(TAG) << "sending header with magic value: " << std::hex
+                << header.magic;
 
   // create an iovec
   struct iovec iov[2];
