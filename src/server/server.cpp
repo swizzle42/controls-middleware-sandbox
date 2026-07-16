@@ -1,8 +1,10 @@
 #include "server.h"
 
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -12,50 +14,14 @@
 #include <string>
 
 #include "controls_middleware/logging.h"
+#include "flatbuffers/flatbuffers.h"
+#include "telemetry_generated.h"
 
-static const char* TAG = "SensorServer";
+static const char* TAG = "sensor_server";
 
 namespace controls_middleware {
 SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
-  // create a non-blocking TCP socket
-  auto listener_fd = socket(AF_INET, (SOCK_STREAM | SOCK_NONBLOCK), 0);
-  if (listener_fd < 0) {
-    LOG_ERROR(TAG, "Failed to create listener socket");
-    throw std::runtime_error("Failed to create listener socket");
-  }
-
-  // configure the listener socket
-  int opt{1};
-  setsockopt(listener_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  // configure the target endpoint address structure
-  struct sockaddr_in listener_addr{};
-  listener_addr.sin_family = AF_INET;
-  listener_addr.sin_port = htons(port);
-
-  // handle ip address
-  if (inet_pton(AF_INET, ip_address.data(), &listener_addr.sin_addr) <= 0) {
-    close(listener_fd);
-    LOG_ERROR(TAG, "Invalid IP address string format");
-    throw std::runtime_error("Invalid IP address string format: " +
-                             std::string(ip_address));
-  }
-
-  // bind to the listener address to the socket
-  if (bind(listener_fd, reinterpret_cast<struct sockaddr*>(&listener_addr),
-           sizeof(listener_addr)) < 0) {
-    close(listener_fd);
-    LOG_ERROR(TAG, "Failed to bind the socket to requested port");
-    throw std::runtime_error("Failed to bind the socket to port " +
-                             std::to_string(port));
-  }
-
-  if (listen(listener_fd, 5) < 0) {
-    close(listener_fd);
-    LOG_ERROR(TAG, "Failed to listen on requested port");
-    throw std::runtime_error("Failed to listen on port " +
-                             std::to_string(port));
-  }
+  int listener_fd = get_listener_socket(ip_address, std::to_string(port));
 
   // otherwise, the listener socket is initialise so add to monitor list
   pollfd listener{.fd = listener_fd,
@@ -64,7 +30,8 @@ SensorServer::SensorServer(std::string_view ip_address, uint16_t port) {
 
   m_monitor_list.push_back(listener);
 
-  LOG_DEBUG(TAG, "Initialisation complete.");
+  LOG_DEBUG(TAG) << "initialisation complete";
+  LOG_DEBUG(TAG) << "created socket on " << ip_address << ":" << port;
 }
 
 SensorServer::~SensorServer() {
@@ -77,7 +44,55 @@ SensorServer::~SensorServer() {
   }
 }
 
-void SensorServer::start(PacketCallback callback) {
+int SensorServer::get_listener_socket(std::string_view address,
+                                      std::string_view port) {
+  int listener_fd;
+  int yes{1};
+  int status;
+
+  struct addrinfo hints, *listener_info, *p;
+
+  // get a socket and bind it
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  if ((status = getaddrinfo(address.data(), port.data(), &hints,
+                            &listener_info)) != 0) {
+    LOG_ERROR(TAG) << "getaddrinfo: " << gai_strerror(status);
+    throw std::runtime_error("Failed to get server info");
+  }
+
+  for (p = listener_info; p != nullptr; p = p->ai_next) {
+    listener_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+    if (listener_fd < 0) {
+      continue;
+    }
+
+    setsockopt(listener_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+
+    if (bind(listener_fd, p->ai_addr, p->ai_addrlen) < 0) {
+      close(listener_fd);
+      continue;
+    }
+
+    break;
+  }
+
+  if (p == nullptr) {
+    throw std::runtime_error("failed to create and bind to socket");
+  }
+
+  freeaddrinfo(listener_info);
+
+  if (listen(listener_fd, 10) == -1) {
+    throw std::runtime_error("failed to listen on port");
+  }
+
+  return listener_fd;
+}
+
+void SensorServer::start(TelemetryCallback callback) {
   m_worker_thread = std::jthread(&SensorServer::listen_loop, this, callback);
   m_is_running = true;
 }
@@ -87,7 +102,7 @@ void SensorServer::stop() {
 }
 
 void SensorServer::listen_loop(std::stop_token stop_token,
-                               PacketCallback callback) {
+                               TelemetryCallback callback) {
   while (!stop_token.stop_requested()) {
     // staging vectors
     std::vector<pollfd> clients_to_add;
@@ -99,7 +114,7 @@ void SensorServer::listen_loop(std::stop_token stop_token,
     // if ready is -1, we have an error
     if (ready == -1) {
       if (errno == EINTR) continue;
-      LOG_ERROR(TAG, "Failed to poll open sockets");
+      LOG_ERROR(TAG) << "Failed to poll open sockets";
       throw std::runtime_error("Failed to poll open sockets.");
     }
 
@@ -110,16 +125,16 @@ void SensorServer::listen_loop(std::stop_token stop_token,
       if (slot.revents == 0) continue;
 
       if (i == 0) {
-        LOG_DEBUG(TAG, "Event on Listening Socket.");
+        LOG_DEBUG(TAG) << "Event on Listening Socket.";
         handle_new_connection(slot, clients_to_add);
       } else {
-        LOG_DEBUG(TAG, "Event on Client Socket.");
+        LOG_DEBUG(TAG) << "Event on Client Socket.";
         handle_client_event(slot, callback, fds_to_remove);
       }
     }
 
     if (!fds_to_remove.empty() || !clients_to_add.empty()) {
-      LOG_DEBUG(TAG, "Modifying server clients.");
+      LOG_DEBUG(TAG) << "Modifying server clients.";
       apply_staged_updates(fds_to_remove, clients_to_add);
     }
   }
@@ -140,11 +155,11 @@ void SensorServer::handle_new_connection(pollfd& listen_slot,
   // create an entry for the clients message buffer
   m_buffers[new_client_fd] = buffer_ctx_t{};
 
-  LOG_DEBUG(TAG, "Added new connection to Server.");
+  LOG_DEBUG(TAG) << "Added new connection to Server.";
 }
 
 void SensorServer::handle_client_event(const pollfd& client_slot,
-                                       const PacketCallback& callback,
+                                       const TelemetryCallback& callback,
                                        std::vector<int>& fds_to_remove) {
   if (client_slot.revents & (POLLERR | POLLHUP)) {
     fds_to_remove.push_back(client_slot.fd);
@@ -153,22 +168,21 @@ void SensorServer::handle_client_event(const pollfd& client_slot,
 
   if (client_slot.revents & POLLIN) {
     uint8_t scratchpad[64];
-    ssize_t bytes_read = read(client_slot.fd, scratchpad, sizeof(scratchpad));
+    ssize_t bytes_read =
+        recv(client_slot.fd, scratchpad, sizeof(scratchpad), 0);
 
     if (bytes_read > 0) {
-      LOG_DEBUG(TAG, "Bytes read from client");
+      LOG_DEBUG(TAG) << "Bytes read from client";
       auto it = m_buffers.find(client_slot.fd);
       if (it != m_buffers.end()) {
         auto& ctx = it->second;
-        ctx.buffer.insert(ctx.buffer.end(), scratchpad,
-                          scratchpad + bytes_read);
+        ctx.rx_buffer.insert(ctx.rx_buffer.end(), scratchpad,
+                             scratchpad + bytes_read);
 
-        for (auto& packet : process_client_buffer(ctx)) {
-          callback(packet);
-        }
+        process_client_buffer(ctx, callback);
       }
     } else {
-      LOG_DEBUG(TAG, "Client signaled change but sent no bytes. Closing.");
+      LOG_DEBUG(TAG) << "Client signaled change but sent no bytes. Closing.";
       fds_to_remove.push_back(client_slot.fd);
     }
   }
@@ -178,7 +192,7 @@ void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
                                         std::vector<pollfd>& clients_to_add) {
   // process removal
   for (int fd : fds_to_remove) {
-    LOG_DEBUG(TAG, "Removing client connection.");
+    LOG_DEBUG(TAG) << "Removing client connection (fd=" << fd << ")";
     close(fd);
     m_buffers.erase(fd);
 
@@ -190,55 +204,62 @@ void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
   }
 
   // process addition
-
-  LOG_DEBUG(TAG, "Adding client connection");
-  m_monitor_list.insert(m_monitor_list.end(), clients_to_add.begin(),
-                        clients_to_add.end());
+  if (!m_monitor_list.empty()) {
+    LOG_DEBUG(TAG) << "Adding client connections";
+    m_monitor_list.insert(m_monitor_list.end(), clients_to_add.begin(),
+                          clients_to_add.end());
+  }
 }
 
-std::vector<SensorPacket> SensorServer::process_client_buffer(
-    buffer_ctx_t& context) {
-  // we need to greedily take from the front of the buffer in increments of
-  // sizeof(SensorPacket)
-  std::vector<SensorPacket> packets;
+int SensorServer::process_client_buffer(buffer_ctx_t& context,
+                                        const TelemetryCallback& callback) {
+  // greedily process Telemetry data from the client buffer
+  while (true) {
+    // if we dont' have enough data to produce a control frame header, break
+    if (context.rx_buffer.size() < sizeof(control_frame_header)) {
+      break;
+    }
 
-  // NOTE: blocking unitl we process all the packets in the client buffer
-  while ((context.buffer.size() - context.read_ptr) >= sizeof(SensorPacket)) {
-    // get the start of the packet
-    const uint8_t* packet_ptr = context.buffer.data() + context.read_ptr;
+    // read the header data
+    control_frame_header header;
+    std::memcpy(&header, context.rx_buffer.data(),
+                sizeof(control_frame_header));
 
-    // cast the packet
-    const SensorPacket& packet =
-        *reinterpret_cast<const SensorPacket*>(packet_ptr);
-    // add the packet to our return vector
-    packets.push_back(packet);
+    // convert from network to host format
+    uint16_t magic = ntohs(header.magic);
+    uint32_t payload_len = ntohl(header.payload_length);
 
-    // consume the frame size in the tracking pointer
-    context.read_ptr += sizeof(SensorPacket);
+    // validate the magic number
+    if (magic != magic_val) {
+      LOG_ERROR(TAG) << "protocol violation: bad magic bytes 0x" << std::hex
+                     << magic << ". Returning early.";
+      return -1;
+    }
 
-    LOG_DEBUG(TAG, "Packet added to buffer.");
+    // check if we have the complete flatbuffer
+    uint32_t total_packet_size = sizeof(control_frame_header) + payload_len;
+    if (context.rx_buffer.size() < total_packet_size) {
+      break;
+    }
+
+    const uint8_t* payload_ptr =
+        context.rx_buffer.data() + sizeof(control_frame_header);
+
+    // verify the data
+    flatbuffers::Verifier verifier(payload_ptr, payload_len);
+    if (VerifyTelemetryBuffer(verifier)) {
+      auto telemetry = GetTelemetry(payload_ptr);
+
+      LOG_DEBUG(TAG) << "data verified, delegating to callback";
+      callback(*telemetry);
+    }
+
+    // clear the frame from the buffer
+    context.rx_buffer.erase(context.rx_buffer.begin(),
+                            context.rx_buffer.begin() + total_packet_size);
   }
 
-  // compaction
-  if (context.read_ptr == context.buffer.size()) {
-    // if we have read up to the end of the buffer we can clear
-    context.buffer.clear();
-    context.read_ptr = 0;
-
-    LOG_DEBUG(TAG, "Client buffer cleared.");
-  } else if (context.read_ptr >= (sizeof(SensorPacket) * 4)) {
-    // otherwise, if we've read over 4 frames, we can move the unread data to
-    // the start of the buffer and begin from idx=0
-    size_t unread_bytes = context.buffer.size() - context.read_ptr;
-    std::memmove(context.buffer.data(),
-                 context.buffer.data() + context.read_ptr, unread_bytes);
-    context.buffer.resize(unread_bytes);
-    context.read_ptr = 0;
-
-    LOG_DEBUG(TAG, "Client buffer resized.");
-  }
-
-  return packets;
+  return 0;
 }
 
 }  // namespace controls_middleware

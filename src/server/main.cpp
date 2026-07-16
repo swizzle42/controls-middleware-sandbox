@@ -6,15 +6,17 @@
 
 #include "controls_middleware/logging.h"
 #include "server.h"
+#include "telemetry_generated.h"
 
-static const char* TAG = "BrokerServer";
+static const char* TAG = "broker";
 
 std::atomic_bool running = true;
 
 void signal_handler(int) { running = false; }
 
 int main() {
-  LOG_INFO(TAG, "begin initialisation");
+  logging::set_level(logging::Level::Debug);
+  LOG_INFO(TAG) << "begin initialisation";
 
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
@@ -22,23 +24,23 @@ int main() {
   try {
     controls_middleware::SensorServer server("127.0.0.1", 8080);
 
-    auto on_packet_recv = [](const controls_middleware::SensorPacket& packet) {
+    auto on_packet_recv = [](const controls_middleware::Telemetry& telemetry) {
       std::cout << "\n[BROKER_DATA_INGEST]------------\n"
-                << "Device ID: " << packet.device_id << "\n"
-                << "Metric Value: " << packet.value << "\n"
-                << "Timestamp: " << packet.timestamp << "\n"
-                << "Status: " << static_cast<int>(packet.status) << "\n\n";
+                << "Device ID: " << telemetry.device_id() << "\n"
+                << "Metric Value: " << telemetry.value() << "\n"
+                << "Timestamp: " << telemetry.timestamp() << "\n"
+                << "Status: " << static_cast<int>(telemetry.status()) << "\n\n";
     };
 
     server.start(on_packet_recv);
-    LOG_INFO(TAG, "sensor server started in the background");
+    LOG_INFO(TAG) << "sensor server started in the background";
 
-    LOG_INFO(TAG, "main loop alive, awaiting sensor telemetry...");
+    LOG_INFO(TAG) << "main loop alive, awaiting sensor telemetry...";
     while (running) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    LOG_INFO(TAG, "shutting down broker server");
+    LOG_INFO(TAG) << "shutting down broker server";
     server.stop();
 
   } catch (std::exception& e) {

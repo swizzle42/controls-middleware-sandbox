@@ -1,0 +1,10 @@
+namespace controls_middleware;
+
+table Telemetry {
+    device_id: uint16;
+    status: uint8;
+    timestamp: uint64;
+    value: float32;
+}
+
+root_type Telemetry;
