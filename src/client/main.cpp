@@ -17,7 +17,7 @@ void signal_handler(int sig) {
   exit(sig);
 }
 
-flatbuffers::Offset<controls_middleware::Telemetry> generate_telemetry(
+flatbuffers::Offset<controls_middleware::Message> generate_telemetry_message(
     flatbuffers::FlatBufferBuilder &builder, int id, float metric_value) {
   // create timestamp
   auto now = std::chrono::system_clock::now();
@@ -33,7 +33,11 @@ flatbuffers::Offset<controls_middleware::Telemetry> generate_telemetry(
   auto telemetry_offset = controls_middleware::CreateTelemetry(
       builder, device_id, status, timestamp, value);
 
-  return telemetry_offset;
+  auto message_offset = controls_middleware::CreateMessage(
+      builder, controls_middleware::Payload_Telemetry,
+      telemetry_offset.Union());
+
+  return message_offset;
 }
 
 int main(int argc, char *argv[]) {
@@ -51,7 +55,7 @@ int main(int argc, char *argv[]) {
 
     while (true) {
       // generate the payload
-      auto telemetry = generate_telemetry(builder, id, 42.123f);
+      auto telemetry = generate_telemetry_message(builder, id, 42.123f);
       builder.Finish(telemetry);
 
       LOG_INFO(TAG) << "sending payload";

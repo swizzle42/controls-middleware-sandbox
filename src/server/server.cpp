@@ -94,7 +94,7 @@ int SensorServer::get_listener_socket(std::string_view address,
   return listener_fd;
 }
 
-void SensorServer::start(TelemetryCallback callback) {
+void SensorServer::start(MessageCallback callback) {
   m_worker_thread = std::jthread(&SensorServer::listen_loop, this, callback);
   m_is_running = true;
 }
@@ -104,7 +104,7 @@ void SensorServer::stop() {
 }
 
 void SensorServer::listen_loop(std::stop_token stop_token,
-                               TelemetryCallback callback) {
+                               MessageCallback callback) {
   while (!stop_token.stop_requested()) {
     // staging vectors
     std::vector<pollfd> clients_to_add;
@@ -161,7 +161,7 @@ void SensorServer::handle_new_connection(pollfd& listen_slot,
 }
 
 void SensorServer::handle_client_event(const pollfd& client_slot,
-                                       const TelemetryCallback& callback,
+                                       const MessageCallback& callback,
                                        std::vector<int>& fds_to_remove) {
   if (client_slot.revents & (POLLERR | POLLHUP)) {
     fds_to_remove.push_back(client_slot.fd);
@@ -214,7 +214,7 @@ void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
 }
 
 int SensorServer::process_client_buffer(buffer_ctx_t& context,
-                                        const TelemetryCallback& callback) {
+                                        const MessageCallback& callback) {
   // greedily process Telemetry data from the client buffer
   while (true) {
     // if we dont' have enough data to produce a control frame header, break
@@ -249,11 +249,11 @@ int SensorServer::process_client_buffer(buffer_ctx_t& context,
 
     // verify the data
     flatbuffers::Verifier verifier(payload_ptr, payload_len);
-    if (VerifyTelemetryBuffer(verifier)) {
-      auto telemetry = GetTelemetry(payload_ptr);
+    if (VerifyMessageBuffer(verifier)) {
+      auto message = GetMessage(payload_ptr);
 
       LOG_DEBUG(TAG) << "data verified, delegating to callback";
-      callback(*telemetry);
+      callback(*message);
     }
 
     // clear the frame from the buffer
