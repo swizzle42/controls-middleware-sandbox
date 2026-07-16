@@ -6,6 +6,7 @@
 
 #include "controls_middleware/logging.h"
 #include "server.h"
+#include "telemetry_generated.h"
 
 static const char* TAG = "broker";
 
@@ -23,12 +24,12 @@ int main() {
   try {
     controls_middleware::SensorServer server("127.0.0.1", 8080);
 
-    auto on_packet_recv = [](const controls_middleware::sensor_packet& packet) {
+    auto on_packet_recv = [](const controls_middleware::Telemetry& telemetry) {
       std::cout << "\n[BROKER_DATA_INGEST]------------\n"
-                << "Device ID: " << packet.device_id << "\n"
-                << "Metric Value: " << packet.value << "\n"
-                << "Timestamp: " << packet.timestamp << "\n"
-                << "Status: " << static_cast<int>(packet.status) << "\n\n";
+                << "Device ID: " << telemetry.device_id() << "\n"
+                << "Metric Value: " << telemetry.value() << "\n"
+                << "Timestamp: " << telemetry.timestamp() << "\n"
+                << "Status: " << static_cast<int>(telemetry.status()) << "\n\n";
     };
 
     server.start(on_packet_recv);

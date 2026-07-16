@@ -92,7 +92,7 @@ int SensorServer::get_listener_socket(std::string_view address,
   return listener_fd;
 }
 
-void SensorServer::start(PacketCallback callback) {
+void SensorServer::start(TelemetryCallback callback) {
   m_worker_thread = std::jthread(&SensorServer::listen_loop, this, callback);
   m_is_running = true;
 }
@@ -102,7 +102,7 @@ void SensorServer::stop() {
 }
 
 void SensorServer::listen_loop(std::stop_token stop_token,
-                               PacketCallback callback) {
+                               TelemetryCallback callback) {
   while (!stop_token.stop_requested()) {
     // staging vectors
     std::vector<pollfd> clients_to_add;
@@ -159,7 +159,7 @@ void SensorServer::handle_new_connection(pollfd& listen_slot,
 }
 
 void SensorServer::handle_client_event(const pollfd& client_slot,
-                                       const PacketCallback& callback,
+                                       const TelemetryCallback& callback,
                                        std::vector<int>& fds_to_remove) {
   if (client_slot.revents & (POLLERR | POLLHUP)) {
     fds_to_remove.push_back(client_slot.fd);
@@ -179,9 +179,7 @@ void SensorServer::handle_client_event(const pollfd& client_slot,
         ctx.rx_buffer.insert(ctx.rx_buffer.end(), scratchpad,
                              scratchpad + bytes_read);
 
-        for (auto& packet : process_client_buffer(ctx)) {
-          callback(packet);
-        }
+        process_client_buffer(ctx, callback);
       }
     } else {
       LOG_DEBUG(TAG) << "Client signaled change but sent no bytes. Closing.";
@@ -213,11 +211,9 @@ void SensorServer::apply_staged_updates(std::vector<int>& fds_to_remove,
   }
 }
 
-std::vector<sensor_packet> SensorServer::process_client_buffer(
-    buffer_ctx_t& context) {
-  // greedily produce sensor_packets from the client buffer
-  std::vector<sensor_packet> packets;
-
+int SensorServer::process_client_buffer(buffer_ctx_t& context,
+                                        const TelemetryCallback& callback) {
+  // greedily process Telemetry data from the client buffer
   while (true) {
     // if we dont' have enough data to produce a control frame header, break
     if (context.rx_buffer.size() < sizeof(control_frame_header)) {
@@ -237,7 +233,7 @@ std::vector<sensor_packet> SensorServer::process_client_buffer(
     if (magic != magic_val) {
       LOG_ERROR(TAG) << "protocol violation: bad magic bytes 0x" << std::hex
                      << magic << ". Returning early.";
-      return packets;
+      return -1;
     }
 
     // check if we have the complete flatbuffer
@@ -254,14 +250,8 @@ std::vector<sensor_packet> SensorServer::process_client_buffer(
     if (VerifyTelemetryBuffer(verifier)) {
       auto telemetry = GetTelemetry(payload_ptr);
 
-      LOG_DEBUG(TAG) << "data verified, creating telemetry packet";
-      // create a sensor packet
-      sensor_packet packet;
-      packet.device_id = telemetry->device_id();
-      packet.status = telemetry->status();
-      packet.timestamp = telemetry->timestamp();
-      packet.value = telemetry->value();
-      packets.push_back(packet);
+      LOG_DEBUG(TAG) << "data verified, delegating to callback";
+      callback(*telemetry);
     }
 
     // clear the frame from the buffer
@@ -269,7 +259,7 @@ std::vector<sensor_packet> SensorServer::process_client_buffer(
                             context.rx_buffer.begin() + total_packet_size);
   }
 
-  return packets;
+  return 0;
 }
 
 }  // namespace controls_middleware

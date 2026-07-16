@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "controls_middleware/packet.h"
+#include "telemetry_generated.h"
 
 namespace controls_middleware {
 
@@ -21,7 +22,7 @@ typedef struct {
 
 class SensorServer {
  public:
-  using PacketCallback = std::function<void(const sensor_packet&)>;
+  using TelemetryCallback = std::function<void(const Telemetry&)>;
 
   // constructor: prepare listening socket but don't start the loop yet
   SensorServer(std::string_view ip_address, uint16_t port);
@@ -36,7 +37,7 @@ class SensorServer {
   /**
    * @brief start the server executation loop in a background thread
    */
-  void start(PacketCallback callback);
+  void start(TelemetryCallback callback);
 
   /**
    * @brief stop the server manually
@@ -52,12 +53,13 @@ class SensorServer {
   /**
    * @brief internal listen loop
    */
-  void listen_loop(std::stop_token stop_token, PacketCallback callback);
+  void listen_loop(std::stop_token stop_token, TelemetryCallback callback);
 
   /**
    * @brief process the client message buffer
    */
-  std::vector<sensor_packet> process_client_buffer(buffer_ctx_t& context);
+  int process_client_buffer(buffer_ctx_t& context,
+                            const TelemetryCallback& callback);
 
   /**
    * @brief handle new connections and stage them
@@ -69,7 +71,7 @@ class SensorServer {
    * @brief handle client events
    */
   void handle_client_event(const pollfd& client_slot,
-                           const PacketCallback& callback,
+                           const TelemetryCallback& callback,
                            std::vector<int>& fds_to_remove);
 
   /**
