@@ -1,6 +1,7 @@
 #include "server.h"
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -70,6 +71,7 @@ int SensorServer::get_listener_socket(std::string_view address,
     }
 
     setsockopt(listener_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+    fcntl(listener_fd, F_SETFL, O_NONBLOCK);
 
     if (bind(listener_fd, p->ai_addr, p->ai_addrlen) < 0) {
       close(listener_fd);
