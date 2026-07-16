@@ -30,7 +30,8 @@ flatbuffers_generate_headers(TARGET telemetry_schema_headers SCHEMAS
                              ${SCHEMA_FILES})
 
 # add a common library
-add_library(controls_common src/logging.cpp)
+add_library(controls_common src/common/logging.cpp src/common/dispatcher.cpp)
+target_link_libraries(controls_common PRIVATE flatbuffers telemetry_schema_headers)
 target_include_directories(controls_common PUBLIC "${CMAKE_SOURCE_DIR}/include")
 
 # broker server executable

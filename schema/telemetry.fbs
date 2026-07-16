@@ -7,4 +7,25 @@ table Telemetry {
     value: float32;
 }
 
-root_type Telemetry;
+table Command {
+    device_id: uint16;
+    timestamp: uint64;
+    cmd: string;
+}
+
+table Heartbeat {
+    device_id: uint16;
+    timestamp: uint64;
+}
+
+union Payload {
+    Telemetry,
+    Command,
+    Heartbeat
+}
+
+table Message {
+    payload: Payload;
+} 
+
+root_type Message;

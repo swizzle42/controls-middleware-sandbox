@@ -22,7 +22,7 @@ typedef struct {
 
 class SensorServer {
  public:
-  using TelemetryCallback = std::function<void(const Telemetry&)>;
+  using MessageCallback = std::function<void(const Message&)>;
 
   // constructor: prepare listening socket but don't start the loop yet
   SensorServer(std::string_view ip_address, uint16_t port);
@@ -37,7 +37,7 @@ class SensorServer {
   /**
    * @brief start the server executation loop in a background thread
    */
-  void start(TelemetryCallback callback);
+  void start(MessageCallback callback);
 
   /**
    * @brief stop the server manually
@@ -53,13 +53,13 @@ class SensorServer {
   /**
    * @brief internal listen loop
    */
-  void listen_loop(std::stop_token stop_token, TelemetryCallback callback);
+  void listen_loop(std::stop_token stop_token, MessageCallback callback);
 
   /**
    * @brief process the client message buffer
    */
   int process_client_buffer(buffer_ctx_t& context,
-                            const TelemetryCallback& callback);
+                            const MessageCallback& callback);
 
   /**
    * @brief handle new connections and stage them
@@ -71,7 +71,7 @@ class SensorServer {
    * @brief handle client events
    */
   void handle_client_event(const pollfd& client_slot,
-                           const TelemetryCallback& callback,
+                           const MessageCallback& callback,
                            std::vector<int>& fds_to_remove);
 
   /**
