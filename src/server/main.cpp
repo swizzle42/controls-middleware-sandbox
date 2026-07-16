@@ -4,6 +4,7 @@
 #include <iostream>
 #include <thread>
 
+#include "controls_middleware/dispatcher.h"
 #include "controls_middleware/logging.h"
 #include "server.h"
 #include "telemetry_generated.h"
@@ -24,19 +25,7 @@ int main() {
   try {
     controls_middleware::SensorServer server("127.0.0.1", 8080);
 
-    auto on_packet_recv = [](const controls_middleware::Message& message) {
-      // turn the message into a telemetry type
-      auto telemetry = message.payload_as_Telemetry();
-
-      std::cout << "\n[BROKER_DATA_INGEST]------------\n"
-                << "Device ID: " << telemetry->device_id() << "\n"
-                << "Metric Value: " << telemetry->value() << "\n"
-                << "Timestamp: " << telemetry->timestamp() << "\n"
-                << "Status: " << static_cast<int>(telemetry->status())
-                << "\n\n";
-    };
-
-    server.start(on_packet_recv);
+    server.start(controls_middleware::dispatcher);
     LOG_INFO(TAG) << "sensor server started in the background";
 
     LOG_INFO(TAG) << "main loop alive, awaiting sensor telemetry...";
